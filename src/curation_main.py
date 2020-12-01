@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from math import sqrt
 
 
@@ -21,7 +22,6 @@ class CurationMain:
         # 수업을 다르지만 학생과 강사가 같은 경우 평점 평균 처리
         df_class = df_class_ori.groupby([df_class_ori['Student ID'], df_class_ori['Tutor ID']], as_index=False).mean()
         df_tutor = pd.read_csv(self.csv_tutor)
-
         df_merge = pd.merge(df_class, df_tutor, on='Tutor ID', how='left')
         df_pivot = df_merge.pivot(index='Student ID', columns='Tutor ID', values='튜터 평가 점수(7점 만점)')
         # nan 처리
@@ -53,9 +53,10 @@ class CurationMain:
 
         df_tutor = pd.merge(df_tutor, df_tutor_mean_rating, left_on='Tutor ID', right_on='Tutor ID', how='left')
         df_tutor = self.nan_convert(df_tutor, 'df_tutor')
-        features = ['Accent', 'Gender', 'Major']
+        # 유사도 컬럼 속성 (연령대 임의로 추가)
+        features = ['Accent', 'Gender', 'Major', 'Age']
         cos_sim = cosine_similarity(df_tutor[features][df_tutor['Tutor ID'] == tutor_id], df_tutor[features])
-        cos_sim = pd.Series(cos_sim[0], name='cos_sim')
+        cos_sim = pd.Series(np.around(cos_sim[0], 5), name='cos_sim')
 
         df_tutor = pd.concat([df_tutor, cos_sim], axis=1)
 
@@ -63,10 +64,11 @@ class CurationMain:
         knn_df_tutor = df_tutor[df_tutor['Tutor ID'].isin(kdd_tutor_list)].drop(columns='cos_sim')
         knn_df_tutor = knn_df_tutor.drop(columns=['Student ID', 'Lesson ID'])
         knn_df_tutor = self.nan_convert(knn_df_tutor, 'knn_df_tutor')
+
         # 강의 들었던 튜터는 제외 (상품기반) - 유사 > 평점 높은 순으로 정렬
         cos_sim_df_tutor = df_tutor[~df_tutor['Tutor ID'].isin(tutor_array)].sort_values(by=['cos_sim', 'mean_rating'],
-                                                                                         ascending=False)[0:recommend_count]
-        cos_sim_df_tutor = cos_sim_df_tutor.drop(columns=['Student ID', 'Lesson ID'])
+                                                                                         ascending=False)
+        cos_sim_df_tutor = cos_sim_df_tutor.drop(columns=['Student ID', 'Lesson ID'])[0:recommend_count]
 
         result_dict = {
             'knn_recommend_tutor': knn_df_tutor.to_dict('records'),
@@ -78,10 +80,12 @@ class CurationMain:
         df_tutor['Major.1'] = df_tutor['Major.1'].fillna('')
         df_tutor['Accent.1'] = df_tutor['Accent.1'].fillna('')
         df_tutor['Gender.1'] = df_tutor['Gender.1'].fillna('')
+        df_tutor['Age.1'] = df_tutor['Age.1'].fillna('')
         if type != 'knn_df_tutor':
-            df_tutor['Accent'] = df_tutor['Accent'].fillna(-1).astype(int)
-            df_tutor['Gender'] = df_tutor['Gender'].fillna(-1)
-            df_tutor['Major'] = df_tutor['Major'].fillna(-1.0).astype(int)
+            df_tutor['Accent'] = df_tutor['Accent'].fillna(-1).astype(int) + 1
+            df_tutor['Gender'] = df_tutor['Gender'].fillna(-1) + 1
+            df_tutor['Age'] = df_tutor['Age'].fillna(-1) + 1
+            df_tutor['Major'] = df_tutor['Major'].fillna(-1.0).astype(int) + 1
             df_tutor['mean_rating'] = df_tutor['mean_rating'].fillna(-1.0)
 
         return df_tutor
